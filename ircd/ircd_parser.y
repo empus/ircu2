@@ -74,7 +74,7 @@
   int yylex(void);
   /* Now all the globals we need :/... */
   int tping, tconn, maxlinks, sendq, port, invert, stringno, flags;
-  char *name, *pass, *host, *ip, *username, *origin, *hub_limit;
+  char *name, *pass, *host, *ip, *username, *origin, *hub_limit, *sslfp, *sslciphers;
   struct SLink *hosts;
   char *stringlist[MAX_STRINGS];
   struct ListenerFlags listen_flags;
@@ -177,6 +177,8 @@ static void free_slist(struct SLink **link) {
 %token TOK_IPV4 TOK_IPV6
 %token DNS
 %token WEBIRC
+%token SSLCIPHERS
+%token SSLTOK
 /* and now a lot of privileges... */
 %token TPRIV_CHAN_LIMIT TPRIV_MODE_LCHAN TPRIV_DEOP_LCHAN TPRIV_WALK_LCHAN
 %token TPRIV_LOCAL_KILL TPRIV_REHASH TPRIV_RESTART TPRIV_DIE
@@ -486,6 +488,8 @@ connectblock: CONNECT
    aconf->name = name;
    aconf->origin_name = origin;
    aconf->passwd = pass;
+   aconf->sslfp = sslfp;
+   aconf->sslciphers = sslciphers;
    aconf->conn_class = c_class;
    aconf->address.port = port;
    aconf->host = host;
@@ -500,18 +504,23 @@ connectblock: CONNECT
  if (!aconf) {
    MyFree(name);
    MyFree(pass);
+   MyFree(sslfp);
+   MyFree(sslciphers);
    MyFree(host);
    MyFree(origin);
    MyFree(hub_limit);
  }
  name = pass = host = origin = hub_limit = NULL;
  c_class = NULL;
+ sslfp = sslciphers = NULL;
  port = flags = maxlinks = 0;
 };
 connectitems: connectitem connectitems | connectitem;
 connectitem: connectname | connectpass | connectclass | connecthost
               | connectport | connectvhost | connectleaf | connecthub
-              | connecthublimit | connectmaxhops | connectauto;
+              | connecthublimit | connectmaxhops | connectauto
+              | connectssl | connectsslfp | connectsslciphers;
+
 connectname: NAME '=' QSTRING ';'
 {
  MyFree(name);
@@ -564,6 +573,26 @@ connectmaxhops: MAXHOPS '=' expr ';'
 connectauto: AUTOCONNECT '=' YES ';' { flags |= CONF_AUTOCONNECT; }
  | AUTOCONNECT '=' NO ';' { flags &= ~CONF_AUTOCONNECT; };
 
+connectssl: SSLTOK '=' YES ';'
+{
+#ifdef USE_SSL
+  flags |= CONF_SSL;
+#else
+  parse_error("Connect block has SSL enabled but I'm not built with SSL.  Check ./configure syntax/output.");
+  flags &= ~CONF_SSL;
+#endif /* USE_SSL */
+} | SSLTOK '=' NO ';' { flags &= ~CONF_SSL; };
+connectsslfp: SSLFP '=' QSTRING ';'
+{
+  MyFree(sslfp);
+  sslfp = $3;
+};
+connectsslciphers: SSLCIPHERS '=' QSTRING ';'
+{
+  MyFree(sslciphers);
+  sslciphers = $3;
+};
+
 uworldblock: UWORLD '{' uworlditems '}' ';';
 uworlditems: uworlditem uworlditems | uworlditem;
 uworlditem: uworldname | uworldoper;
@@ -599,6 +628,8 @@ operblock: OPER '{' operitems '}' ';'
     aconf = make_conf(CONF_OPERATOR);
     DupString(aconf->name, name);
     DupString(aconf->passwd, pass);
+    if (sslfp)
+      DupString(aconf->sslfp, sslfp);
     conf_parse_userhost(aconf, link->value.cp);
     aconf->conn_class = c_class;
     memcpy(&aconf->privs, &privs, sizeof(aconf->privs));
@@ -606,6 +637,7 @@ operblock: OPER '{' operitems '}' ';'
   }
   MyFree(name);
   MyFree(pass);
+  MyFree(sslfp);
   free_slist(&hosts);
   name = pass = NULL;
   c_class = NULL;
@@ -613,7 +645,7 @@ operblock: OPER '{' operitems '}' ';'
   memset(&privs_dirty, 0, sizeof(privs_dirty));
 };
 operitems: operitem | operitems operitem;
-operitem: opername | operpass | operhost | operclass | priv;
+operitem: opername | operpass | operhost | operclass | opersslfp | priv;
 opername: NAME '=' QSTRING ';'
 {
   MyFree(name);
@@ -638,6 +670,12 @@ operclass: CLASS '=' QSTRING ';'
  if (!c_class)
   parse_error("No such connection class '%s' for Operator block", $3);
  MyFree($3);
+};
+
+opersslfp: SSLFP '=' QSTRING ';'
+{
+  MyFree(sslfp);
+  sslfp = $3;
 };
 
 priv: privtype '=' yesorno ';'
@@ -733,7 +771,8 @@ portblock: PORT '{' portitems '}' ';' {
   port = 0;
 };
 portitems: portitem portitems | portitem;
-portitem: portnumber | portvhost | portvhostnumber | portmask | portserver | portwebirc | porthidden;
+portitem: portnumber | portvhost | portvhostnumber | portmask | portserver | portwebirc
+            | porthidden | portssl;
 portnumber: PORT '=' address_family NUMBER ';'
 {
   if ($4 < 1 || $4 > 65535) {
@@ -794,6 +833,19 @@ porthidden: HIDDEN '=' YES ';'
   FlagClr(&listen_flags, LISTEN_HIDDEN);
 };
 
+portssl: SSLTOK '=' YES ';'
+{
+#ifdef USE_SSL
+  FlagSet(&listen_flags, LISTEN_SSL);
+#else
+  parse_error("Port block has SSL enabled but I'm not built with SSL.  Check ./configure syntax/output.");
+  FlagClr(&listen_flags, LISTEN_SSL);
+#endif /* USE_SSL */
+} | SSLTOK '=' NO ';'
+{
+  FlagClr(&listen_flags, LISTEN_SSL);
+}
+
 portwebirc: WEBIRC '=' YES ';'
 {
   FlagSet(&listen_flags, LISTEN_WEBIRC);
@@ -833,12 +885,14 @@ clientblock: CLIENT
     aconf->conn_class = c_class;
     aconf->maximum = maxlinks;
     aconf->passwd = pass;
+    aconf->sslfp = sslfp;
   }
   if (!aconf) {
     MyFree(username);
     MyFree(host);
     MyFree(ip);
     MyFree(pass);
+    MyFree(sslfp);
   }
   if (username)
     DoIdentLookups = 1;
@@ -848,10 +902,12 @@ clientblock: CLIENT
   maxlinks = 0;
   ip = NULL;
   pass = NULL;
+  sslfp = NULL;
   port = 0;
 };
 clientitems: clientitem clientitems | clientitem;
-clientitem: clienthost | clientip | clientusername | clientclass | clientpass | clientmaxlinks | clientport;
+clientitem: clienthost | clientip | clientusername | clientclass | clientpass
+            | clientmaxlinks | clientport | clientsslfp;
 clienthost: HOST '=' QSTRING ';'
 {
   char *sep = strchr($3, '@');
@@ -899,6 +955,11 @@ clientpass: PASS '=' QSTRING ';'
 clientmaxlinks: MAXLINKS '=' expr ';'
 {
   maxlinks = $3;
+};
+clientsslfp: SSLFP '=' QSTRING ';'
+{
+  MyFree(sslfp);
+  sslfp = $3;
 };
 clientport: PORT '=' expr ';'
 {

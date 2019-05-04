@@ -182,17 +182,22 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
       int flags = CHFL_DEOPPED;
       int err = 0;
 
+      if (feature_bool(FEAT_CHMODE_Z_STRICT) && (chptr->mode.mode & MODE_SSLONLY) && !IsSSL(sptr))
+        err = ERR_SSLONLYCHAN;
+
       /* Check Apass/Upass -- since we only ever look at a single
        * "key" per channel now, this hampers brute force attacks. */
       if (key && !strcmp(key, chptr->mode.apass))
         flags = CHFL_CHANOP | CHFL_CHANNEL_MANAGER;
       else if (key && !strcmp(key, chptr->mode.upass))
         flags = CHFL_CHANOP;
-      else if (chptr->users == 0 && !chptr->mode.apass[0]) {
+          else if (chptr->users == 0 && !chptr->mode.apass[0] && !(chptr->mode.mode & MODE_PERSIST)) {
         /* Joining a zombie channel (zannel): give ops and increment TS. */
         flags = CHFL_CHANOP;
         chptr->creationtime++;
-      } else if (IsInvited(sptr, chptr)) {
+          } else if ((chptr->mode.mode & MODE_SSLONLY) && !IsSSL(sptr))
+            err = ERR_SSLONLYCHAN;
+      else if (IsInvited(sptr, chptr)) {
         /* Invites bypass these other checks. */
       } else if (chptr->mode.mode & MODE_INVITEONLY)
         err = ERR_INVITEONLYCHAN;
@@ -228,6 +233,7 @@ int m_join(struct Client *cptr, struct Client *sptr, int parc, char *parv[])
         case ERR_BANNEDFROMCHAN: err = 'b'; break;
         case ERR_BADCHANNELKEY:  err = 'k'; break;
         case ERR_NEEDREGGEDNICK: err = 'r'; break;
+        case ERR_SSLONLYCHAN:    err = 'Z'; break;
         default: err = '?'; break;
         }
         /* send accountability notice */

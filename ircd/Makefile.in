@@ -130,6 +130,7 @@ IRCD_SRC = \
 	m_die.c \
 	m_endburst.c \
 	m_error.c \
+        m_fingerprint.c \
 	m_get.c \
 	m_gline.c \
 	m_help.c \
@@ -170,6 +171,7 @@ IRCD_SRC = \
 	m_settime.c \
 	m_silence.c \
 	m_squit.c \
+        m_starttls.c \
 	m_stats.c \
 	m_time.c \
 	m_topic.c \
@@ -211,6 +213,7 @@ IRCD_SRC = \
 	s_stats.c \
 	s_user.c \
 	send.c \
+        ssl.c \
 	uping.c \
 	userload.c \
 	whocmds.c \
@@ -444,8 +447,8 @@ ircd.o: ircd.c ../config.h ../include/ircd.h ../include/struct.h \
  ../include/parse.h ../include/res.h ../include/s_auth.h \
  ../include/s_bsd.h ../include/s_conf.h ../include/s_debug.h \
  ../include/s_misc.h ../include/s_stats.h ../include/send.h \
- ../include/sys.h ../include/uping.h ../include/userload.h \
- ../include/version.h ../include/whowas.h
+ ../include/ssl.h ../include/sys.h ../include/uping.h \
+ ../include/userload.h ../include/version.h ../include/whowas.h
 ircd_alloc.o: ircd_alloc.c ../config.h ../include/ircd_alloc.h \
  ../include/ircd_log.h ../include/ircd_string.h ../include/ircd_chattr.h \
  ../include/s_debug.h ../include/ircd_defs.h
@@ -693,6 +696,10 @@ m_error.o: m_error.c ../config.h ../include/client.h \
  ../include/ircd_reply.h ../include/ircd_string.h \
  ../include/ircd_chattr.h ../include/numeric.h ../include/numnicks.h \
  ../include/s_debug.h ../include/s_misc.h ../include/send.h
+m_fingerprint.o: m_fingerprint.c ../config.h ../include/client.h \
+  ../include/hash.h ../include/ircd.h ../include/ircd_log.h \
+  ../include/ircd_reply.h ../include/ircd_string.h ../include/numeric.h \
+  ../include/numnicks.h ../include/send.h
 m_get.o: m_get.c ../config.h ../include/client.h ../include/ircd_defs.h \
  ../include/dbuf.h ../include/msgq.h ../include/ircd_events.h \
  ../include/ircd_handler.h ../include/res.h ../include/capab.h \
@@ -952,7 +959,8 @@ m_rehash.o: m_rehash.c ../config.h ../include/client.h \
  ../include/capab.h ../include/ircd.h ../include/struct.h \
  ../include/ircd_log.h ../include/ircd_reply.h ../include/ircd_string.h \
  ../include/ircd_chattr.h ../include/motd.h ../include/numeric.h \
- ../include/s_conf.h ../include/client.h ../include/send.h
+ ../include/s_conf.h ../include/client.h ../include/send.h \
+ ../include/s_user.h ../include/ssl.h
 m_reset.o: m_reset.c ../config.h ../include/client.h \
  ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
  ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
@@ -1029,6 +1037,11 @@ m_squit.o: m_squit.c ../config.h ../include/client.h \
  ../include/ircd_reply.h ../include/ircd_string.h ../include/numeric.h \
  ../include/numnicks.h ../include/match.h ../include/s_debug.h \
  ../include/s_misc.h ../include/s_user.h ../include/send.h
+m_starttls.o: m_starttls.c ../config.h ../include/client.h \
+  ../include/dbuf.h ../include/handlers.h ../include/hash.h \
+  ../include/ircd.h ../include/ircd_log.h ../include/ircd_reply.h \
+  ../include/ircd_string.h ../include/numeric.h ../include/numnicks.h \
+  ../include/send.h
 m_stats.o: m_stats.c ../config.h ../include/client.h \
  ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
  ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
@@ -1264,7 +1277,7 @@ s_auth.o: s_auth.c ../config.h ../include/s_auth.h \
  ../include/querycmds.h ../include/ircd_features.h ../include/random.h \
  ../include/res.h ../include/s_bsd.h ../include/s_conf.h \
  ../include/s_debug.h ../include/s_misc.h ../include/s_user.h \
- ../include/send.h
+ ../include/send.h ../include/ssl.h
 s_bsd.o: s_bsd.c ../config.h ../include/s_bsd.h ../include/client.h \
  ../include/ircd_defs.h ../include/dbuf.h ../include/msgq.h \
  ../include/ircd_events.h ../include/ircd_handler.h ../include/res.h \
@@ -1378,7 +1391,8 @@ s_user.o: s_user.c ../config.h ../include/s_user.h ../include/IPcheck.h \
  ../include/s_debug.h ../include/s_misc.h ../include/s_serv.h \
  ../include/send.h ../include/struct.h ../include/supported.h \
  ../include/channel.h ../include/sys.h ../include/userload.h \
- ../include/version.h ../include/whowas.h ../include/handlers.h
+ ../include/version.h ../include/whowas.h ../include/handlers.h \
+ ../include/ssl.h
 send.o: send.c ../config.h ../include/send.h ../include/channel.h \
  ../include/ircd_defs.h ../include/res.h ../include/class.h \
  ../include/client.h ../include/dbuf.h ../include/msgq.h \
@@ -1390,6 +1404,11 @@ send.o: send.c ../config.h ../include/send.h ../include/channel.h \
  ../include/msg.h ../include/numnicks.h ../include/parse.h \
  ../include/s_bsd.h ../include/s_debug.h ../include/s_misc.h \
  ../include/s_user.h ../include/struct.h ../include/sys.h
+ssl.o: ssl.c ../config.h ../include/client.h ../include/ircd_alloc.h \
+  ../include/ircd_features.h ../include/ircd_log.h \
+  ../include/ircd_snprintf.h ../include/ircd_string.h ../include/listener.h \
+  ../include/s_bsd.h ../include/s_debug.h ../include/send.h \
+  ../include/ssl.h
 uping.o: uping.c ../config.h ../include/uping.h ../include/ircd_defs.h \
  ../include/ircd_events.h ../include/res.h ../include/client.h \
  ../include/dbuf.h ../include/msgq.h ../include/ircd_handler.h \

@@ -62,6 +62,7 @@
 #include "s_misc.h"
 #include "s_user.h"
 #include "send.h"
+#include "ssl.h"
 
 #include <errno.h>
 #include <string.h>
@@ -142,8 +143,13 @@ typedef enum {
 } ReportType;
 
 /** Sends response \a r (from #ReportType) to client \a c. */
+#ifdef USE_SSL
+#define sendheader(c, r) \
+   ssl_send(c, HeaderMessages[(r)].message, HeaderMessages[(r)].length)
+#else
 #define sendheader(c, r) \
    send(cli_fd(c), HeaderMessages[(r)].message, HeaderMessages[(r)].length, 0)
+#endif /* USE_SSL */
 
 /** Enumeration of IAuth connection flags. */
 enum IAuthFlag
@@ -546,6 +552,14 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
         send_reply(cptr, ERR_PASSWDMISMATCH);
         res = exit_client(cptr, cptr, &me, "Bad Password");
       }
+      aconf = cli_confs(auth->client)->value.aconf;
+      if (!verify_sslclifp(auth->client, aconf))
+      {
+        ServerStats->is_bad_password++;
+        send_reply(auth->client, ERR_SSLCLIFP);
+        res = exit_client(auth->client, auth->client, &me, "SSL fingerprint mismatch");
+      }
+
     }
 
     if (res == 0)
