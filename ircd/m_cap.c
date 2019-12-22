@@ -54,7 +54,7 @@ static struct capabilities {
 #define _CAP(cap, flags, name)						      \
 	{ CAP_ ## cap, #cap, (flags), (name), sizeof(name) - 1 }
 #ifdef USE_SSL
-    _CAP(TLS, 0, "tls", FEAT_CAP_tls),
+    _CAP(TLS, 0, "tls"),
 #endif
   CAPLIST
 #undef _CAP

@@ -45,6 +45,11 @@
 #include <sys/types.h>          /* time_t, size_t */
 #define INCLUDED_sys_types_h
 #endif
+#ifdef USE_SSL
+#ifndef INCLUDED_ssl_h
+#include "ssl.h"
+#endif
+#endif /* USE_SSL */
 
 struct ConfItem;
 struct Listener;
@@ -137,37 +142,40 @@ enum Priv
  */
 enum Flag
   {
-    FLAG_PINGSENT,                  /**< Unreplied ping sent */
-    FLAG_DEADSOCKET,                /**< Local socket is dead--Exiting soon */
-    FLAG_KILLED,                    /**< Prevents "QUIT" from being sent for this */
-    FLAG_BLOCKED,                   /**< socket is in a blocked condition */
-    FLAG_CLOSING,                   /**< set when closing to suppress errors */
-    FLAG_UPING,                     /**< has active UDP ping request */
-    FLAG_HUB,                       /**< server is a hub */
-    FLAG_IPV6,                      /**< server understands P10 IPv6 addrs */
-    FLAG_SERVICE,                   /**< server is a service */
-    FLAG_GOTID,                     /**< successful ident lookup achieved */
-    FLAG_NONL,                      /**< No \n in buffer */
-    FLAG_TS8,                       /**< Why do you want to know? */
-    FLAG_MAP,                       /**< Show server on the map */
-    FLAG_JUNCTION,                  /**< Junction causing the net.burst. */
-    FLAG_BURST,                     /**< Server is receiving a net.burst */
-    FLAG_BURST_ACK,                 /**< Server is waiting for eob ack */
-    FLAG_IPCHECK,                   /**< Added or updated IPregistry data */
-    FLAG_LOCOP,                     /**< Local operator -- SRB */
-    FLAG_SERVNOTICE,                /**< server notices such as kill */
-    FLAG_OPER,                      /**< Operator */
-    FLAG_INVISIBLE,                 /**< makes user invisible */
-    FLAG_WALLOP,                    /**< send wallops to them */
-    FLAG_DEAF,                      /**< Makes user deaf */
-    FLAG_CHSERV,                    /**< Disallow KICK or MODE -o on the user;
-                                       don't display channels in /whois */
-    FLAG_DEBUG,                     /**< send global debug/anti-hack info */
-    FLAG_ACCOUNT,                   /**< account name has been set */
-    FLAG_HIDDENHOST,                /**< user's host is hidden */
-    FLAG_LAST_FLAG,                 /**< number of flags */
-    FLAG_LOCAL_UMODES = FLAG_LOCOP, /**< First local mode flag */
-    FLAG_GLOBAL_UMODES = FLAG_OPER  /**< First global mode flag */
+    FLAG_PINGSENT,                   /**< Unreplied ping sent */
+    FLAG_DEADSOCKET,                 /**< Local socket is dead--Exiting soon */
+    FLAG_KILLED,                     /**< Prevents "QUIT" from being sent for this */
+    FLAG_BLOCKED,                    /**< socket is in a blocked condition */
+    FLAG_CLOSING,                    /**< set when closing to suppress errors */
+    FLAG_UPING,                      /**< has active UDP ping request */
+    FLAG_HUB,                        /**< server is a hub */
+    FLAG_IPV6,                       /**< server understands P10 IPv6 addrs */
+    FLAG_SERVICE,                    /**< server is a service */
+    FLAG_GOTID,                      /**< successful ident lookup achieved */
+    FLAG_NONL,                       /**< No \n in buffer */
+    FLAG_TS8,                        /**< Why do you want to know? */
+    FLAG_MAP,                        /**< Show server on the map */
+    FLAG_JUNCTION,                   /**< Junction causing the net.burst. */
+    FLAG_BURST,                      /**< Server is receiving a net.burst */
+    FLAG_BURST_ACK,                  /**< Server is waiting for eob ack */
+    FLAG_IPCHECK,                    /**< Added or updated IPregistry data */
+    FLAG_LOCOP,                      /**< Local operator -- SRB */
+    FLAG_SERVNOTICE,                 /**< server notices such as kill */
+    FLAG_OPER,                       /**< Operator */
+    FLAG_INVISIBLE,                  /**< makes user invisible */
+    FLAG_WALLOP,                     /**< send wallops to them */
+    FLAG_DEAF,                       /**< Makes user deaf */
+    FLAG_CHSERV,                     /**< Disallow KICK or MODE -o on the user;
+                                        don't display channels in /whois */
+    FLAG_DEBUG,                      /**< send global debug/anti-hack info */
+    FLAG_ACCOUNT,                    /**< account name has been set */
+    FLAG_HIDDENHOST,                 /**< user's host is hidden */
+    FLAG_LAST_FLAG,                  /**< number of flags */
+    FLAG_LOCAL_UMODES = FLAG_LOCOP,  /**< First local mode flag */
+    FLAG_GLOBAL_UMODES = FLAG_OPER,  /**< First global mode flag */
+    FLAG_SSL,                        /**< User is connected via SSL (+z) */
+    FLAG_STARTTLS,                   /**< User is connecting with StartTLS */
+    FLAG_SSLNEEDACCEPT               /**< Client needs SSL_accept() to be called again */
   };
 
 /** Declare flagset type for operator privileges. */
@@ -222,6 +230,7 @@ struct Connection
   char con_buffer[BUFSIZE];          /**< Incoming message buffer; or
                                         the error that caused this
                                         clients socket to close. */
+  char*               con_sslerror;  /**< SSL Error. */
   struct Socket       con_socket;    /**< socket descriptor for
                                       client */
   struct Timer        con_proc;      /**< process latent messages from
@@ -258,6 +267,7 @@ struct Client {
   char cli_name[HOSTLEN + 1];     /**< Unique name of the client, nick or host */
   char cli_username[USERLEN + 1]; /**< Username determined by ident lookup */
   char cli_info[REALLEN + 1];     /**< Free form additional client information */
+  char cli_sslclifp[BUFSIZE + 1];   /**< SSL client certificate fingerprint if available */
 };
 
 /** Magic constant to identify valid Client structures. */
@@ -319,6 +329,8 @@ struct Client {
 #define cli_info(cli)		((cli)->cli_info)
 /** Get client account string. */
 #define cli_account(cli)	(cli_user(cli) ? cli_user(cli)->account : "0")
+/** Get a clients SSL fingerprint string. */
+#define cli_sslclifp(cli)       ((cli)->cli_sslclifp)
 
 /** Get number of incoming bytes queued for client. */
 #define cli_count(cli)		con_count(cli_connect(cli))
@@ -380,6 +392,8 @@ struct Client {
 #define cli_wline(cli)          con_wline(cli_connect(cli))
 /** Get sentalong marker for client. */
 #define cli_sentalong(cli)      con_sentalong(cli_connect(cli))
+/** Get last SSL error string. */
+#define cli_sslerror(cli)       con_sslerror(cli_connect(cli))
 
 /** Verify that a connection is valid. */
 #define con_verify(con)		((con)->con_magic == CONNECTION_MAGIC)
@@ -461,6 +475,8 @@ struct Client {
 #define con_auth(con)		((con)->con_auth)
 /** Get the WebIRC block (if any) used by the connection. */
 #define con_wline(con)          ((con)->con_wline)
+/** Get last SSL error string. */
+#define con_sslerror(con)       ((con)->con_sslerror)
 
 #define STAT_CONNECTING         0x001 /**< connecting to another server */
 #define STAT_HANDSHAKE          0x002 /**< pass - server sent */
@@ -591,7 +607,12 @@ struct Client {
 #define IsHiddenHost(x)         HasFlag(x, FLAG_HIDDENHOST)
 /** Return non-zero if the client has an active PING request. */
 #define IsPingSent(x)           HasFlag(x, FLAG_PINGSENT)
-
+/** Return non-zero if the client is connected via SSL. */
+#define IsSSL(x)                HasFlag(x, FLAG_SSL)
+/** Return non-zero if the client is connecting using STARTTLS. */
+#define IsStartTLS(x)           HasFlag(x, FLAG_STARTTLS)
+/** Return non-zero if the client still needs SSL_accept(). */
+#define IsSSLNeedAccept(x)      HasFlag(x, FLAG_SSLNEEDACCEPT)
 /** Return non-zero if the client has operator or server privileges. */
 #define IsPrivileged(x)         (IsAnOper(x) || IsServer(x))
 /** Return non-zero if the client's host is hidden. */
@@ -637,6 +658,12 @@ struct Client {
 #define SetHiddenHost(x)        SetFlag(x, FLAG_HIDDENHOST)
 /** Mark a client as having a pending PING. */
 #define SetPingSent(x)          SetFlag(x, FLAG_PINGSENT)
+/** Mark a client as having connected via SSL. */
+#define SetSSL(x)               SetFlag(x, FLAG_SSL)
+/** Mark a client as using STARTTLS. */
+#define SetStartTLS(x)          SetFlag(x, FLAG_STARTTLS)
+/** Mark a client as needing SSL_accept(). */
+#define SetSSLNeedAccept(x)     SetFlag(x, FLAG_SSLNEEDACCEPT)
 
 /** Return non-zero if \a sptr sees \a acptr as an operator. */
 #define SeeOper(sptr,acptr) (IsAnOper(acptr) && (HasPriv(acptr, PRIV_DISPLAY) \
@@ -672,6 +699,12 @@ struct Client {
 #define ClearPingSent(x)        ClrFlag(x, FLAG_PINGSENT)
 /** Clear the client's HUB flag. */
 #define ClearHub(x)             ClrFlag(x, FLAG_HUB)
+/** Client is no longer connected via SSL (this cannot be possible). */
+#define ClearSSL(x)             ClrFlag(x, FLAG_SSL)
+/** Client is no longer using STARTTLS. */
+#define ClearStartTLS(x)        ClrFlag(x, FLAG_STARTTLS)
+/** Client no longer needs SSL_accept(). */
+#define ClearSSLNeedAccept(x)   ClrFlag(x, FLAG_SSLNEEDACCEPT)
 
 /* free flags */
 #define FREEFLAG_SOCKET	0x0001	/**< socket needs to be freed */

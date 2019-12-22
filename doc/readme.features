@@ -1006,3 +1006,9 @@ SSL_CIPHERS
 When set configures the list of available ciphers for incoming SSL
 connections. See https://www.openssl.org/docs/apps/ciphers.html for an
 explanation on how to format this string.
+
+CAP_tls
+ * Type: boolean
+ * Default: TRUE
+
+Enables announcement of the 'tls' (STARTTLS) client capability.

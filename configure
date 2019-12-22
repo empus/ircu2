@@ -692,6 +692,9 @@ with_dpath
 with_cpath
 with_lpath
 with_maxcon
+enable_ssl
+with_openssl_includes
+with_openssl_libs
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1327,6 +1330,7 @@ Optional Features:
   --disable-devpoll       Disable the /dev/poll-based engine
   --disable-kqueue        Disable the kqueue-based engine
   --disable-epoll         Disable the epoll-based engine
+  --disable-ssl           Disable Secure Sockets Layer support
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1346,6 +1350,10 @@ Optional Packages:
   --with-cpath=file       Set server configuration file
   --with-lpath=file       Set the debugging log file
   --with-maxcon=maxcon    Maximum number of connections server will accept
+  --with-openssl-includes=dir
+                          Specify location of OpenSSL header files (default:
+                          /usr/include)
+  --with-openssl-libs=dir Specify location of OpenSSL libs (default: /usr/lib)
 
 Some influential environment variables:
   CC          C compiler command
@@ -6990,6 +6998,223 @@ $as_echo "$unet_cv_with_maxcon" >&6; }
 cat >>confdefs.h <<_ACEOF
 #define MAXCONNECTIONS $unet_cv_with_maxcon
 _ACEOF
+
+# *** start SSL mods ***
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to enable OpenSSL support" >&5
+$as_echo_n "checking whether to enable OpenSSL support... " >&6; }
+# Check whether --enable-ssl was given.
+if test "${enable_ssl+set}" = set; then :
+  enableval=$enable_ssl; unet_cv_enable_ssl=$enable_ssl
+else
+  if ${unet_cv_enable_ssl+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  unet_cv_enable_ssl=yes
+fi
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $unet_cv_enable_ssl" >&5
+$as_echo "$unet_cv_enable_ssl" >&6; }
+
+if test x"$unet_cv_enable_ssl" = xyes; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for OpenSSL includes" >&5
+$as_echo_n "checking for OpenSSL includes... " >&6; }
+
+# Check whether --with-openssl-includes was given.
+if test "${with_openssl_includes+set}" = set; then :
+  withval=$with_openssl_includes; base_ssl_inc=$withval
+else
+  base_ssl_inc=/usr/include
+fi
+
+  unet_cv_with_openssl_inc_prefix=$base_ssl_inc
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $unet_cv_with_openssl_inc_prefix" >&5
+$as_echo "$unet_cv_with_openssl_inc_prefix" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SSL_INCLUDES_PATH "$base_ssl_inc"
+_ACEOF
+
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for OpenSSL libraries" >&5
+$as_echo_n "checking for OpenSSL libraries... " >&6; }
+
+# Check whether --with-openssl-libs was given.
+if test "${with_openssl_libs+set}" = set; then :
+  withval=$with_openssl_libs; unet_cv_with_openssl_prefix=$withval
+else
+  unet_cv_with_openssl_prefix=/usr/lib
+fi
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $unet_cv_with_openssl_prefix" >&5
+$as_echo "$unet_cv_with_openssl_prefix" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define SSL_LIBS_PATH "$unet_cv_with_openssl_prefix"
+_ACEOF
+
+
+  save_CFLAGS=$CFLAGS
+  save_LIBS=$LIBS
+
+  CFLAGS="-I$unet_cv_with_openssl_inc_prefix -lcrypto"
+  LIBS="-Wl,-rpath=$unet_cv_with_openssl_prefix -L$unet_cv_with_openssl_prefix -lssl -lcrypto"
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for SSL_read in -lssl" >&5
+$as_echo_n "checking for SSL_read in -lssl... " >&6; }
+if ${ac_cv_lib_ssl_SSL_read+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lssl  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char SSL_read ();
+int
+main ()
+{
+return SSL_read ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_ssl_SSL_read=yes
+else
+  ac_cv_lib_ssl_SSL_read=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ssl_SSL_read" >&5
+$as_echo "$ac_cv_lib_ssl_SSL_read" >&6; }
+if test "x$ac_cv_lib_ssl_SSL_read" = xyes; then :
+
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for X509_new in -lcrypto" >&5
+$as_echo_n "checking for X509_new in -lcrypto... " >&6; }
+if ${ac_cv_lib_crypto_X509_new+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char X509_new ();
+int
+main ()
+{
+return X509_new ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_crypto_X509_new=yes
+else
+  ac_cv_lib_crypto_X509_new=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_X509_new" >&5
+$as_echo "$ac_cv_lib_crypto_X509_new" >&6; }
+if test "x$ac_cv_lib_crypto_X509_new" = xyes; then :
+
+     { $as_echo "$as_me:${as_lineno-$LINENO}: checking for EVP_sha256 in -lcrypto" >&5
+$as_echo_n "checking for EVP_sha256 in -lcrypto... " >&6; }
+if ${ac_cv_lib_crypto_EVP_sha256+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypto  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char EVP_sha256 ();
+int
+main ()
+{
+return EVP_sha256 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_crypto_EVP_sha256=yes
+else
+  ac_cv_lib_crypto_EVP_sha256=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_sha256" >&5
+$as_echo "$ac_cv_lib_crypto_EVP_sha256" >&6; }
+if test "x$ac_cv_lib_crypto_EVP_sha256" = xyes; then :
+
+        for ac_header in $base_ssl_inc/openssl/ssl.h $base_ssl_inc/openssl/err.h
+do :
+  as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
+ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
+if eval test \"x\$"$as_ac_Header"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+          enable_ssl="yes";
+          OPENSSL_LDFLAGS="-lssl -lcrypto"
+
+fi
+
+done
+
+
+fi
+
+
+fi
+
+
+fi
+
+
+  LIBS=$save_LIBS
+  CFLAGS=$save_CFLAGS
+
+  if test "x$enable_ssl" = xyes; then
+
+$as_echo "#define USE_SSL /**/" >>confdefs.h
+
+    LIBS="$LIBS -Wl,-rpath=$unet_cv_with_openssl_prefix -L$unet_cv_with_openssl_prefix $OPENSSL_LDFLAGS"
+    CFLAGS="$CFLAGS -I$unet_cv_with_openssl_inc_prefix"
+  else
+    as_fn_error "Unable to find OpenSSL, Maybe you need to install the openssl and libssl-dev package, or use --with-openssl-includes and --with-openssl
+-libs if you have openssl installed in an odd location" "$LINENO" 5
+  fi
+fi
 
 
 ac_config_files="$ac_config_files Makefile ircd/Makefile ircd/test/Makefile"
