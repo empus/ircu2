@@ -388,6 +388,7 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_INVALIDUSERNAME  468        /* Undernet extension */
 /* 	ERR_ONLYSERVERSCANCHANGE 468	   Dalnet,unreal */
 /*	ERR_LINKSET	     469	unreal */
+#define ERR_SSLONLYCHAN      469                /* Nefarious & Undernet extension */
 /*	ERR_LINKCHANNEL	     470	unreal */
 /*      ERR_KICKEDFROMCHAN   470         aircd */
 #define ERR_CHANNELISFULL    471
@@ -460,6 +461,8 @@ extern const struct Numeric* get_error_numeric(int err);
 #define ERR_QUARANTINED      524       /* Undernet extension -Vampire */
 #define ERR_INVALIDKEY       525        /* Undernet extension */
 
+#define ERR_SSLCLIFP         532        /* Nefarious & Undernet extension */
+
 #define ERR_NOTLOWEROPLEVEL  560	/* Undernet extension */
 #define ERR_NOTMANAGER       561	/* Undernet extension */
 #define ERR_CHANSECURED      562	/* Undernet extension */
@@ -468,7 +471,6 @@ extern const struct Numeric* get_error_numeric(int err);
 /*      ERR_NOMANAGER_LONG   565	no longer used */
 #define ERR_NOMANAGER        566	/* Undernet extension */
 #define ERR_UPASS_SAME_APASS 567        /* Undernet extension */
-#define ERR_LASTERROR        568
 
 /*	RPL_LOGON	     600	dalnet,unreal
 	RPL_LOGOFF           601	dalnet,unreal
@@ -492,4 +494,19 @@ extern const struct Numeric* get_error_numeric(int err);
 	RPL_DUMPRPL	     641	unreal
 	RPL_EODUMP	     642	unreal
 */
+
+#define RPL_SSLFP            613        /* Nefarious & Undernet extension */
+#define ERR_NOSSLFP          614        /* Nefarious & Undernet extension */
+
+#define RPL_WHOISSSLFP       616        /* Nefarious & Undernet extension */
+
+#define RPL_STARTTLS         670        /* Nefarious & Undernet extension */
+#define RPL_WHOISSSL         671        /* Nefarious & Undernet extension (SSL WHOIS) */
+
+#define ERR_STARTTLS         691        /* Nefarious & Undernet extension */
+
+#define ERR_CANNOTCHANGECHANMODE 974   /* Nefarious extension */
+
+#define ERR_LASTERROR        975
+
 #endif /* INCLUDED_numeric_h */

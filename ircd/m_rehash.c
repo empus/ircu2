@@ -90,6 +90,7 @@
 #include "numeric.h"
 #include "s_conf.h"
 #include "send.h"
+#include "ssl.h"
 
 /* #include <assert.h> -- Now using assert in ircd_log.h */
 
@@ -99,6 +100,7 @@
  * parv[1] = 'm' flushes the MOTD cache and returns
  * parv[1] = 'l' reopens the log files and returns
  * parv[1] = 'q' to not rehash the resolver (optional)
+ * parv[1] = 's' to reload SSL certificates
  */
 int mo_rehash(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 {
@@ -116,6 +118,13 @@ int mo_rehash(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
       send_reply(sptr, SND_EXPLICIT | RPL_REHASHING, ":Reopening log files");
       log_reopen(); /* reopen log files */
       return 0;
+#ifdef USE_SSL
+    }
+    else if (*parv[1] == 's') {
+      send_reply(sptr, SND_EXPLICIT | RPL_REHASHING, ":Reloading SSL certificates");
+      ssl_reinit();
+      return 0;
+#endif
     } else if (*parv[1] == 'q')
       flag = 2;
   }

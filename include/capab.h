@@ -39,6 +39,9 @@
 enum Capab {
 #define _CAP(cap, flags, name)	CAP_ ## cap
   CAPLIST,
+#ifdef USE_SSL
+  _CAP(TLS, 0, "tls"),
+#endif
 #undef _CAP
   _CAP_LAST_CAP
 };

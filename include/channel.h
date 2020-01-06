@@ -113,12 +113,16 @@ struct Client;
 #define MODE_APASS	0x200000
 #define MODE_WASDELJOINS 0x400000 	/**< Not DELJOINS, but some joins
 					 * pending */
+
+#define MODE_PERSIST     0x800000       /**< +z Channel remains even if empty */
+#define MODE_SSLONLY     0x1000000     /**< +Z Only SSL users (user mode +z) may join */
+
 /** mode flags which take another parameter (With PARAmeterS)
  */
 #define MODE_WPARAS     (MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT|MODE_APASS|MODE_UPASS)
 
 /** Available Channel modes */
-#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDdRcC" : "biklmnopstvrDdRcC"
+#define infochanmodes feature_bool(FEAT_OPLEVELS) ? "AbiklmnopstUvrDdRcCzZ" : "biklmnopstvrDdRcCzZ"
 /** Available Channel modes that take parameters */
 #define infochanmodeswithparams feature_bool(FEAT_OPLEVELS) ? "AbkloUv" : "bklov"
 
@@ -271,6 +275,7 @@ struct Channel {
   time_t             creationtime; /**< Creation time of this channel */
   time_t             topic_time;   /**< Modification time of the topic */
   unsigned int       users;	   /**< Number of clients on this channel */
+  unsigned int       nonsslusers;  /**< Number of clients without user mode +z */
   struct Membership* members;	   /**< Pointer to the clients on this channel*/
   struct SLink*      invites;	   /**< List of invites on this channel */
   struct Ban*        banlist;      /**< List of bans on this channel */

@@ -156,6 +156,16 @@ int m_oper(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
   assert(0 != (aconf->status & CONF_OPERATOR));
 
+  if (!verify_sslclifp(sptr, aconf))
+  {
+    send_reply(sptr, ERR_SSLCLIFP);
+    sendto_opmask_butone(&me, SNO_OLDREALOP, "Failed %sOPER attempt by %s "
+      "(%s@%s) (SSL fingerprint mismatch)",
+      (!MyUser(sptr) ? "remote " : ""), cli_name(sptr),
+      cli_user(sptr)->username, cli_user(sptr)->realhost);
+    return 0;
+  }
+
   if (oper_password_match(password, aconf->passwd))
   {
     struct Flags old_mode = cli_flags(sptr);

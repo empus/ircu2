@@ -106,7 +106,10 @@ static struct lexer_token {
   TOKEN(PROGRAM),
   TOKEN(DNS),
   TOKEN(WEBIRC),
+  TOKEN(SSLFP),
+  TOKEN(SSLCIPHERS),
 #undef TOKEN
+  { "ssl", SSLTOK },
   { "administrator", ADMIN },
   { "apass_opmode", TPRIV_APASS_OPMODE },
   { "auto", AUTOCONNECT },

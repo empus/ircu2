@@ -607,6 +607,14 @@ int mr_server(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
                            "Access denied. No conf line for server %s", cli_name(cptr));
   }
 
+  if (!verify_sslclifp(cptr, aconf)) {
+    ++ServerStats->is_bad_server;
+    sendto_opmask_butone(0, SNO_OLDSNO, "Access denied (SSL fingerprint mismatch) %s",
+      cli_name(cptr));
+    return exit_client_msg(cptr, cptr, &me,
+      "No Access (SSL fingerprint mismatch) %s", cli_name(cptr));
+  }
+
   if (*aconf->passwd && !!strcmp(aconf->passwd, cli_passwd(cptr))) {
     ++ServerStats->is_bad_server;
     sendto_opmask_butone(0, SNO_OLDSNO, "Access denied (passwd mismatch) %s",

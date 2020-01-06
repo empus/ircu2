@@ -218,9 +218,15 @@ static void do_whois(struct Client* sptr, struct Client *acptr, int parc)
       send_reply(sptr, RPL_WHOISACTUALLY, name, user->username,
                  user->realhost, ircd_ntoa(&cli_ip(acptr)));
 
-    /* Hint: if your looking to add more flags to a user, eg +h, here's
+    /* Hint: if you're looking to add more flags to a user, eg +h, here's
      *       probably a good place to add them :)
      */
+
+    if (IsSSL(acptr)) {
+      send_reply(sptr, RPL_WHOISSSL, name);
+      if (cli_sslclifp(acptr) && !EmptyString(cli_sslclifp(acptr)))
+        send_reply(sptr, RPL_WHOISSSLFP, name, cli_sslclifp(acptr));
+    }
 
     if (MyConnect(acptr) && (!feature_bool(FEAT_HIS_WHOIS_IDLETIME) ||
                              (sptr == acptr || IsAnOper(sptr) || parc >= 3)))

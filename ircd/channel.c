@@ -490,6 +490,8 @@ void add_user_to_channel(struct Channel* chptr, struct Client* who,
     if (chptr->destruct_event)
       remove_destruct_event(chptr);
     ++chptr->users;
+    if (!IsSSL(who) && !IsChannelService(who))
+      ++chptr->nonsslusers;
     ++((cli_user(who))->joined);
   }
 }
@@ -535,6 +537,10 @@ static int remove_member_from_channel(struct Membership* member)
 
   member->next_member = membershipFreeList;
   membershipFreeList = member;
+
+  if (!IsSSL(member->user) && !IsChannelService(member->user))
+    --chptr->nonsslusers;
+
 
   return sub1_from_channel(chptr);
 }
@@ -708,6 +714,10 @@ int member_can_send_to_channel(struct Membership* member, int reveal)
   if (member->channel->mode.mode & MODE_MODERATED)
     return 0;
 
+  /* If only SSL users may join and you're not one, you can't speak. */
+  if (member->channel->mode.mode & MODE_SSLONLY && !IsSSL(member->user))
+    return 0;
+
   /* If only logged in users may join and you're not one, you can't speak. */
   if (member->channel->mode.mode & MODE_REGONLY && !IsAccount(member->user))
     return 0;
@@ -755,7 +765,8 @@ int client_can_send_to_channel(struct Client *cptr, struct Channel *chptr, int r
    */
   if (!member) {
     if ((chptr->mode.mode & (MODE_NOPRIVMSGS|MODE_MODERATED)) ||
-	((chptr->mode.mode & MODE_REGONLY) && !IsAccount(cptr)))
+        ((chptr->mode.mode & MODE_REGONLY) && !IsAccount(cptr)) ||
+          ((chptr->mode.mode & MODE_SSLONLY) && !IsSSL(cptr)))
       return 0;
     else
       return !find_ban(cptr, chptr->banlist);
@@ -839,6 +850,10 @@ void channel_modes(struct Client *cptr, char *mbuf, char *pbuf, int buflen,
     *mbuf++ = 'c';
   if (chptr->mode.mode & MODE_NOCTCP)
     *mbuf++ = 'C';
+  if (chptr->mode.mode & MODE_PERSIST)
+    *mbuf++ = 'z';
+  if (chptr->mode.mode & MODE_SSLONLY)
+    *mbuf++ = 'Z';
   if (chptr->mode.limit) {
     *mbuf++ = 'l';
     ircd_snprintf(0, pbuf, buflen, "%u", chptr->mode.limit);
@@ -1541,6 +1556,8 @@ modebuf_flush_int(struct ModeBuf *mbuf, int all)
     MODE_LIMIT,		'l',
 /*  MODE_APASS,		'A', */
 /*  MODE_UPASS,		'U', */
+    MODE_PERSIST,       'z',
+    MODE_SSLONLY,       'Z',
     0x0, 0x0
   };
   static int local_flags[] = {
@@ -1966,7 +1983,7 @@ modebuf_mode(struct ModeBuf *mbuf, unsigned int mode)
 
   mode &= (MODE_ADD | MODE_DEL | MODE_PRIVATE | MODE_SECRET | MODE_MODERATED |
 	   MODE_TOPICLIMIT | MODE_INVITEONLY | MODE_NOPRIVMSGS | MODE_REGONLY |
-           MODE_NOCOLOR | MODE_NOCTCP |
+           MODE_NOCOLOR | MODE_NOCTCP | MODE_SSLONLY | MODE_PERSIST |
            MODE_DELJOINS | MODE_WASDELJOINS | MODE_REGISTERED);
 
   if (!(mode & ~(MODE_ADD | MODE_DEL))) /* don't add empty modes... */
@@ -2102,6 +2119,8 @@ modebuf_extract(struct ModeBuf *mbuf, char *buf)
     MODE_DELJOINS,      'D',
     MODE_NOCOLOR,       'c',
     MODE_NOCTCP,        'C',
+    MODE_PERSIST,       'z',
+    MODE_SSLONLY,       'Z',
     0x0, 0x0
   };
   unsigned int add;
@@ -3245,6 +3264,8 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
     MODE_DELJOINS,      'D',
     MODE_NOCOLOR,       'c',
     MODE_NOCTCP,        'C',
+    MODE_PERSIST,       'z',
+    MODE_SSLONLY,       'Z',
     MODE_ADD,		'+',
     MODE_DEL,		'-',
     0x0, 0x0
@@ -3333,6 +3354,27 @@ mode_parse(struct ModeBuf *mbuf, struct Client *cptr, struct Client *sptr,
       case 'v':
 	mode_parse_client(&state, flag_p);
 	break;
+
+      case 'z': /* deal with persistant (MODE_PERSIST) channels */
+        if (!IsBurst(sptr) && ((IsServer(sptr) && !IsService(sptr)) ||
+           (!IsServer(sptr) && !IsService(cli_user(sptr)->server))))
+          break;
+        mode_parse_mode(&state, flag_p);
+        if ((state.dir == MODE_DEL) && (chptr->users == 0))
+          schedule_destruct_event_1m(state.chptr);
+      break;
+
+      case 'Z': /* deal with oper only */
+        /* If they're not an SSL user, they can't +/- MODE_SSLONLY. */
+        if (feature_bool(FEAT_CHMODE_Z_STRICT) && (state.dir == MODE_ADD) &&
+            (chptr->nonsslusers > 0) && MyUser(sptr))
+          send_reply(sptr, ERR_CANNOTCHANGECHANMODE, chptr->chname, "Z", "Mode cannot be set while non-SSL members are present");
+        else if ((feature_bool(FEAT_CHMODE_Z) && IsSSL(sptr)) ||
+            IsOper(sptr) || IsServer(sptr) || IsChannelService(sptr))
+          mode_parse_mode(&state, flag_p);
+        else
+          send_reply(sptr, ERR_NOPRIVILEGES);
+      break;
 
       default: /* deal with other modes */
 	mode_parse_mode(&state, flag_p);
