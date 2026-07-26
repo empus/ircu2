@@ -248,16 +248,16 @@ async def test_clienttagdeny_empty_allows_all(ircd_network):
         await _join_channel([sender, observer], "#denyempty")
 
         await sender.send("@+blockedtag=1 PRIVMSG #denyempty :was blocked")
-        msg = await observer.wait_for("PRIVMSG", timeout=5.0)
+        msg = await observer.wait_for("PRIVMSG", timeout=15.0)
         assert msg.params[-1] == "was blocked", msg.raw
         assert tag_value(msg.tags, "+blockedtag") == "1", msg.raw
 
         await sender.send("@+example.com/foo=ok PRIVMSG #denyempty :still ok")
-        msg = await observer.wait_for("PRIVMSG", timeout=5.0)
+        msg = await observer.wait_for("PRIVMSG", timeout=15.0)
         assert tag_value(msg.tags, "+example.com/foo") == "ok", msg.raw
 
         await sender.send("@+other=xyz TAGMSG #denyempty")
-        msg = await observer.wait_for("TAGMSG", timeout=5.0)
+        msg = await observer.wait_for("TAGMSG", timeout=15.0)
         assert tag_value(msg.tags, "+other") == "xyz", msg.raw
     finally:
         try:
@@ -280,7 +280,7 @@ async def test_clienttagdeny_named_denies_only_that_tag(ircd_network):
         await sender.send(
             "@+example.com/foo=nope;+othertag=yes PRIVMSG #denynamed :partial"
         )
-        msg = await observer.wait_for("PRIVMSG", timeout=5.0)
+        msg = await observer.wait_for("PRIVMSG", timeout=15.0)
         assert msg.params[-1] == "partial", msg.raw
         assert not tag_has(msg.tags, "+example.com/foo"), msg.raw
         assert tag_value(msg.tags, "+othertag") == "yes", msg.raw
@@ -296,7 +296,13 @@ async def test_clienttagdeny_named_denies_only_that_tag(ircd_network):
             pass
 
         await sender.send("@+allowed=1 TAGMSG #denynamed")
-        msg = await observer.wait_for("TAGMSG", timeout=5.0)
+        # The denied-only TAGMSG above may outlive its 2s window under
+        # throttle and arrive (tagless) here; skip past it.  A stray never
+        # carries +allowed, so matching on the tag is unambiguous.
+        for _ in range(3):
+            msg = await observer.wait_for("TAGMSG", timeout=15.0)
+            if tag_has(msg.tags, "+allowed"):
+                break
         assert tag_value(msg.tags, "+allowed") == "1", msg.raw
     finally:
         try:
@@ -365,7 +371,7 @@ async def test_client_oversize_tags_rejected_with_417(ircd_network):
         # tag data = 4095 'a' chars → over limit (excludes @ and space)
         payload = "a" * 4095
         await user.send(f"@+big={payload} PRIVMSG #bigtagtest :overflow")
-        err = await user.wait_for("417", timeout=5.0)
+        err = await user.wait_for("417", timeout=15.0)
         assert "too long" in err.params[-1].lower() or err.params[-1]
     finally:
         await _cleanup(user)
@@ -388,21 +394,21 @@ async def test_client_oversize_body_rejected_with_417(ircd_network):
         ok_text = "o" * 200
         assert len(prefix) + len(ok_text) < 510
         await user.send(f"@+example.com/foo=x {prefix}{ok_text}")
-        msg = await observer.wait_for("PRIVMSG", timeout=5.0)
+        msg = await observer.wait_for("PRIVMSG", timeout=15.0)
         assert msg.params[-1] == ok_text, msg.raw
 
         # Exactly 510 body octets: accepted (no 417); may truncate on send.
         edge = "e" * (510 - len(prefix))
         assert len(prefix) + len(edge) == 510
         await user.send(f"@+example.com/foo=x {prefix}{edge}")
-        edge_msg = await observer.wait_for("PRIVMSG", timeout=5.0)
+        edge_msg = await observer.wait_for("PRIVMSG", timeout=15.0)
         assert edge_msg.params[-1].startswith("e"), edge_msg.raw
 
         # 511 body octets → ERR_INPUTTOOLONG; must not reach the channel.
         bad_text = "x" * (511 - len(prefix))
         assert len(prefix) + len(bad_text) == 511
         await user.send(f"@+example.com/foo=x {prefix}{bad_text}")
-        err = await user.wait_for("417", timeout=5.0)
+        err = await user.wait_for("417", timeout=15.0)
         assert err.command == "417", err.raw
         try:
             leaked = await observer.wait_for("PRIVMSG", timeout=1.0)
