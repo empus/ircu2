@@ -101,6 +101,30 @@ LIMITS = {
     "name": "limits.test.net",
 }
 
+# A (prod release) — B (new, NETWORK_FEATURES=FALSE) — C (new, NETWORK_FEATURES=TRUE)
+NF_A = {
+    "host": "127.0.0.1",
+    "port": 6674,
+    "server_port": 4420,
+    "name": "a.prod.test.net",
+    "role": "prod",
+}
+NF_B = {
+    "host": "127.0.0.1",
+    "port": 6675,
+    "tls_port": 7692,
+    "server_port": 4421,
+    "name": "b.test.net",
+    "role": "compat_hub",
+}
+NF_C = {
+    "host": "127.0.0.1",
+    "port": 6676,
+    "server_port": 4422,
+    "name": "c.test.net",
+    "role": "services_leaf",
+}
+
 
 def _start_services(*services):
     """Stop any running containers, rebuild, and start fresh."""
@@ -109,6 +133,55 @@ def _start_services(*services):
     args = ["up", "--build", "--force-recreate", "-d"]
     args.extend(services)
     docker_compose(*args)
+
+
+async def _nf_compat_links_ready(timeout: float = 60.0) -> None:
+    """Oper up on B and poll LINKS until both A and C appear."""
+    import asyncio
+
+    client = IRCClient()
+    await client.connect(NF_B["host"], NF_B["port"])
+    try:
+        await client.register("nflinkop", "oper", "NF Link Oper")
+        await client.send("OPER testoper operpass")
+        await client.wait_for("381", timeout=10.0)
+
+        needed = {NF_A["name"], NF_C["name"]}
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            await client.send("LINKS")
+            seen = set()
+            while True:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+                msg = await client.recv(timeout=min(5.0, max(0.1, remaining)))
+                if msg.command == "364":
+                    for name in needed:
+                        if any(name in p for p in msg.params):
+                            seen.add(name)
+                elif msg.command == "365":
+                    break
+            if needed <= seen:
+                return
+            await asyncio.sleep(0.5)
+        raise TimeoutError(
+            f"NF compat links not ready after {timeout}s "
+            f"(wanted {sorted(needed)})"
+        )
+    finally:
+        try:
+            await client.send("QUIT :done")
+        except Exception:
+            pass
+        await client.disconnect()
+
+
+def _wait_nf_compat_links(timeout: float = 60.0) -> None:
+    """Sync wrapper: poll B's LINKS until A and C are linked."""
+    import asyncio
+
+    asyncio.run(_nf_compat_links_ready(timeout=timeout))
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +220,7 @@ def _start_topology_hub():
 
 
 def _start_topology_network():
-    _start_services()
+    _start_services("ircd-hub", "ircd-leaf1", "ircd-leaf2")
     for server in (HUB, LEAF1, LEAF2):
         wait_for_port(server["host"], server["port"])
     # Wait for servers to link
@@ -187,6 +260,29 @@ def _start_topology_dns():
     reset_stats()
 
 
+def _start_topology_nf_compat():
+    _start_services("ircd-nf-a", "ircd-nf-b", "ircd-nf-c")
+    for server in (NF_A, NF_B, NF_C):
+        try:
+            wait_for_port(server["host"], server["port"], timeout=120.0)
+        except TimeoutError:
+            # Surface container logs — config/parse failures are otherwise silent.
+            for name in ("ircu-nf-a", "ircu-nf-b", "ircu-nf-c"):
+                result = subprocess.run(
+                    ["docker", "logs", "--tail", "80", name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                print(
+                    f"\n===== docker logs {name} =====\n"
+                    f"{result.stdout}{result.stderr}"
+                )
+            raise
+    # Autoconnect A→B and C→B; wait until LINKS on B shows both peers.
+    _wait_nf_compat_links(timeout=60.0)
+
+
 _TOPOLOGIES = {
     "hub": _start_topology_hub,
     "network": _start_topology_network,
@@ -194,6 +290,7 @@ _TOPOLOGIES = {
     "tls_hub": _start_topology_tls_hub,
     "limits": _start_topology_limits,
     "dns": _start_topology_dns,
+    "nf_compat": _start_topology_nf_compat,
 }
 
 # A running topology satisfies a required one iff listed here. "network"
@@ -208,6 +305,7 @@ _SATISFIED_BY = {
     "tls_hub": {"tls_hub"},
     "limits": {"limits"},
     "dns": {"dns"},
+    "nf_compat": {"nf_compat"},
 }
 
 _FIXTURE_TOPOLOGY = {
@@ -217,12 +315,13 @@ _FIXTURE_TOPOLOGY = {
     "ircd_tls_hub": "tls_hub",
     "ircd_limits": "limits",
     "ircd_dns_hub": "dns",
+    "ircd_nf_compat": "nf_compat",
 }
 
 # Collection order: tests with no docker dependency first, then one
 # contiguous block per topology. "network" runs before "hub" so hub-only
 # tests reuse the already-running network (see _SATISFIED_BY).
-_TOPOLOGY_ORDER = ["network", "hub", "limits", "dns", "tls_network", "tls_hub"]
+_TOPOLOGY_ORDER = ["network", "hub", "limits", "dns", "nf_compat", "tls_network", "tls_hub"]
 
 _active_topology = None
 
@@ -356,6 +455,18 @@ def ircd_tls_network():
 def ircd_limits():
     """Connection info for the dedicated limits-test ircd."""
     return LIMITS
+
+
+@pytest.fixture(scope="session")
+def ircd_nf_compat():
+    """Connection info for the A(prod)—B(NF=FALSE)—C(NF=TRUE) compat chain.
+
+    A is built from the UndernetIRC/ircu2 release tarball (see Dockerfile
+    target runtime-release).  B and C are built from the working tree.
+    Services attach to C.  The container lifecycle is handled by
+    _ircd_topology, like every other topology.
+    """
+    return {"a": NF_A, "b": NF_B, "c": NF_C}
 
 
 @pytest.fixture(scope="session")

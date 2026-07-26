@@ -184,12 +184,20 @@ int ms_opmode(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
 
     if (!MyConnect(dptr))
     {
+      /* Remote +x is a newer S2S extension; do not relay it while
+       * NETWORK_FEATURES is off (mixed-version upgrade). */
+      if (!strcmp(parv[2], "+x") && !feature_bool(FEAT_NETWORK_FEATURES))
+        return 0;
       sendcmdto_serv_butone(sptr, CMD_OPMODE, cptr, "%s %s",
         parv[1], parv[2]);
       return 0;
     }
 
-    conf = find_conf_byhost(cli_confs(cptr), cli_name(sptr), CONF_UWORLD);
+    /* Prefer UWorld attached to the originator (works across multi-hop
+     * relays); fall back to the immediate uplink for direct links. */
+    conf = find_conf_byhost(cli_confs(sptr), cli_name(sptr), CONF_UWORLD);
+    if (!conf)
+      conf = find_conf_byhost(cli_confs(cptr), cli_name(sptr), CONF_UWORLD);
     if (!conf) {
       protocol_violation(cptr, "OPMODE from non U:lined server %s", cli_name(sptr));
       return 0;

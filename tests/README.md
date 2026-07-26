@@ -37,12 +37,17 @@ uv run pytest -m single_server    # tests needing only the hub
 uv run pytest -m multi_server     # tests needing hub + 2 leaves
 uv run pytest -m tls              # TLS trust / verification tests (hub + TLS leaf)
 uv run pytest -m tls_single       # standalone TLS hub (no peer server ever links)
+uv run pytest -m nf_compat        # A(prod)-B(NF=FALSE)-C topology
 
 # TLS suite only
 uv run pytest tls/ -v
 
+# NETWORK_FEATURES rolling-upgrade compat (downloads prod release on first build)
+uv run pytest pr_network_features_compat/ -v
+
 All docker topologies (hub-only, full network, TLS, limits, DNS, standalone
-TLS hub) share one compose project and are mutually exclusive. `conftest.py`
+TLS hub, NF compat) share one compose project and are mutually exclusive —
+each topology brings up only its own containers. `conftest.py`
 manages them explicitly: an autouse fixture starts the topology each test
 needs and tests are grouped by topology at collection time, so any selection
 (`-m`, `-k`, paths) is safe — mixing topologies in one run just costs extra
@@ -127,6 +132,37 @@ The hub also has Connect blocks for two external test servers used by the P10 te
 | uworldonly.test.net | 6       | Yes (no oper) | U:lined without CONF_UWORLD_OPER   |
 
 Configs are baked into the Docker images (in `docker/`), not volume-mounted.
+
+### NETWORK_FEATURES compat topology (`pr_network_features_compat/`)
+
+Rolling-upgrade guard tests use a dedicated A—B—C chain.  **A** is built from
+the current [UndernetIRC/ircu2 release](https://github.com/UndernetIRC/ircu2/releases)
+(`Dockerfile` target `runtime-release`, default tag `u2.10.12.19`).  **B** and
+**C** are built from the working tree.
+
+| Service   | Server Name      | Binary   | NETWORK_FEATURES | Client | S2S  | IP         |
+|-----------|------------------|----------|------------------|--------|------|------------|
+| ircd-nf-a | a.prod.test.net  | release  | n/a (prod)       | 6674   | 4420 | 10.55.0.40 |
+| ircd-nf-b | b.test.net       | tree     | FALSE            | 6675   | 4421 | 10.55.0.41 |
+| ircd-nf-c | c.test.net       | tree     | TRUE (also HUB)  | 6676   | 4422 | 10.55.0.42 |
+
+Services (`P10Server`, numeric 4) attach to **C** (C sets `HUB` so it can
+accept that server link).  Assertions check that remote `OPMODE +x`,
+already-authed `ACCOUNT` flag updates, and `+z` TLS fingerprint tokens on
+NICK/umode bursts never reach **A**.  On **u2.10.12.19 and earlier**, a
+second ACCOUNT for an already-authed nick is a hard `protocol_violation`;
+**u2.10.13.0** tolerates same-name updates locally.  The ACCOUNT gate is
+asserted on the wire via a P10 spy on **B** (`spy.test.net`): with
+`NETWORK_FEATURES=FALSE`, B must not relay a second `AC` for that numnick.
+A spy on **C** (`spyc.test.net`) checks that a flag update after bare-name
+registration still leaves C with id+flags (NF=TRUE hop).  TOPIC-with-who
+from the tree is also checked for prod parse tolerance (topic text still
+last param).  Override the release with `IRCD_RELEASE_TAG=...`.
+
+Positive-path checks (TAGMSG / OPMODE +x / ACCOUNT flag update still leave
+the hub when `NETWORK_FEATURES` is TRUE) live in
+`test_nf_true_positive.py` on the standard hub topology, using
+`notulined.test.net` as a wire spy beside services.
 
 ## IRC Client API
 
