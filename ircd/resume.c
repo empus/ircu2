@@ -739,11 +739,20 @@ resume_adopt(struct Client *old_client, struct Client *new_client)
  * burst, its user modes and away state, and for each channel it belongs to a
  * self JOIN, topic, and NAMES.  Everything is sent only to \a cptr -- no
  * broadcast -- so peers see nothing.
+ *
+ * \a send_loggedin re-sends RPL_LOGGEDIN so a token-path resumer (which never
+ * SASLs on the new connection) re-learns it is still logged in.
  */
 static void
-resume_replay(struct Client *cptr)
+resume_replay(struct Client *cptr, int send_loggedin)
 {
   struct Membership *member;
+
+  /* The account numeric precedes the welcome, as at registration. */
+  if (send_loggedin)
+    send_reply(cptr, RPL_LOGGEDIN, cli_name(cptr), cli_user(cptr)->username,
+               cli_user(cptr)->host, cli_user(cptr)->account,
+               cli_user(cptr)->account);
 
   send_welcome(cptr);
 
@@ -789,11 +798,17 @@ resume_complete(struct Client *new_client)
 {
   struct ResumeSession *s = cli_resume_claim(new_client);
   struct Client *old_client;
+  int send_loggedin;
 
   assert(s != NULL);
   assert(s->state == RESUME_STATE_CLAIMING);
   old_client = s->client;
   assert(old_client != NULL);
+
+  /* A token-path resumer did not SASL here, so it never got RPL_LOGGEDIN;
+     re-send it for an accounted session (matters when only the server-local
+     token, not services, let it back in).  A SASL resumer already has it. */
+  send_loggedin = IsAccount(old_client) && !HasFlag(new_client, FLAG_SASL);
 
   /* Release the temporary client's registration bookkeeping while its
      connection is still its own. */
@@ -827,8 +842,10 @@ resume_complete(struct Client *new_client)
 
   resume_total_resumed++;
 
-  /* The rebuild below is a bounded server burst; lift the SendQ ceiling so a
-     client in many/large channels is not disconnected mid-replay. */
+  /* Lift the SendQ ceiling so the bounded replay burst does not disconnect a
+     client in many/large channels.  The limit is enforced at queue time
+     (send_buffer()), not at flush (send_queued()), so raising it only across
+     the burst is safe. */
   {
     struct Connection *con = cli_connect(old_client);
     unsigned int saved_sendq = con_max_sendq(con);
@@ -838,7 +855,7 @@ resume_complete(struct Client *new_client)
     sendcmdto_one(&me, CMD_RESUME, old_client, "SUCCESS :%s",
                   cli_name(old_client));
     resume_restore_away(old_client, s);
-    resume_replay(old_client);
+    resume_replay(old_client, send_loggedin);
     if (s->history_lost)
       sendstdreply(old_client, MSG_WARN, "RESUME", "HISTORY_LOST",
                    "Messages may have been missed while you were disconnected");
@@ -849,6 +866,10 @@ resume_complete(struct Client *new_client)
     if (CapHas(cli_active(old_client), CAP_RESUME))
       resume_token_issue(old_client);
 
+    /* Flush before restoring the ceiling, so a large replay does not leave the
+       SendQ above the class limit and trip "Max SendQ exceeded" on the next
+       inbound message. */
+    send_queued(old_client);
     con_max_sendq(con) = saved_sendq;
   }
 

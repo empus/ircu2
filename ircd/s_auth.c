@@ -464,7 +464,9 @@ static void iauth_notify(struct AuthRequest *auth, enum AuthRequestFlag flag)
     break;
 
   case AR_NEEDS_NICK:
-    if (IAuthHas(iauth, IAUTH_UNDERNET))
+    /* Withhold a nick deferred for resume until it is committed, so iauth does
+       not evaluate a nick the client may not keep (see auth_defer_resume_nick()). */
+    if (IAuthHas(iauth, IAUTH_UNDERNET) && !auth->resume_wantnick[0])
       sendto_iauth(auth->client, "n %s", cli_name(sptr));
     break;
 
@@ -667,8 +669,11 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
         if (IsAccount(cptr) && resume_account_try_claim(cptr, held)) {
           /* claimed -- resume_complete() runs below */
         } else if (!held) {
+          /* Nick freed up; the client keeps it -- forward the now-committed
+             nick to iauth (it was withheld while deferred). */
           hAddClient(cptr);
           auth->resume_wantnick[0] = '\0';
+          iauth_notify(auth, AR_NEEDS_NICK);
         } else {
           send_reply(cptr, ERR_NICKNAMEINUSE, auth->resume_wantnick);
           cli_name(cptr)[0] = '\0';
@@ -1431,10 +1436,11 @@ int auth_set_nick(struct AuthRequest *auth, const char *nickname)
 }
 
 /** Defer a registering secure client whose nick collides with a detached,
- * resume-eligible session (see resume_account_deferrable()).  The requested
- * nick is set on the client so iauth/dronescan see it, but it is deliberately
- * NOT added to the hash -- the detached session keeps it -- and it is remembered
- * so check_auth_finished() can adopt that session once the account is known.
+ * resume-eligible session (see resume_account_deferrable()).  The nick is set
+ * on the client for registration bookkeeping but is NOT hashed (the detached
+ * session keeps it) nor forwarded to iauth (withheld until committed); it is
+ * remembered so check_auth_finished() can adopt that session once the account
+ * is known.
  * @return the auth_set_nick() result (registration proceeds normally). */
 int auth_defer_resume_nick(struct Client *cptr, const char *nick)
 {
