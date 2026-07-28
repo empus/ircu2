@@ -19,6 +19,7 @@ enumerate/discover wildcarded G-lines or BadChans by pattern fishing the
 way an oper can.
 """
 
+import asyncio
 import time
 
 import pytest
@@ -182,14 +183,25 @@ async def test_family_ambiguous_mask_surfaces_for_concrete_ip(ircd_hub, oper):
         await srv._send(
             f"{srv._num} GL * +ambivictim@::/0 3600 {now} {now + 3600} :zero prefix test"
         )
-        await srv.disconnect()
-
-        matches = await gline_query(oper, "203.0.113.5")
+        # Keep the services link open until the query is answered:
+        # P10Server.disconnect() aborts the socket (RST), and an RST
+        # arriving before the ircd reads the GL line discards it from
+        # the receive buffer, so disconnecting right after _send()
+        # loses the G-line on a timing race. The GL also lands
+        # asynchronously relative to the oper connection, so poll.
+        deadline = asyncio.get_running_loop().time() + 10.0
+        matches = []
+        while asyncio.get_running_loop().time() < deadline:
+            matches = await gline_query(oper, "203.0.113.5")
+            if any("ambivictim@::/0" in t for t in _texts(matches)):
+                break
+            await asyncio.sleep(0.3)
         assert any("ambivictim@::/0" in t for t in _texts(matches)), (
             "family-ambiguous *@::/0 must surface for a concrete ipv4 query, got "
             f"{[(m.command, m.params) for m in matches]}"
         )
     finally:
+        await srv.disconnect()
         await deactivate_gline(ircd_hub, "ambivictim@::/0", nick="matchcln4")
 
 

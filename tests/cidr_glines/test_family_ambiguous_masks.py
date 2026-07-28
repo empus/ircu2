@@ -134,23 +134,25 @@ async def victim_is_killed(victim, timeout=5.0):
 
 
 async def test_ipv6_zero_prefix_mask_kills_ipv4_client(ircd_hub, oper):
-    """victim@::/16 covers ::ffff:0:0, so it must match IPv4 clients.
+    """*victim@::/16 covers ::ffff:0:0, so it must match IPv4 clients.
 
     The G-line is scoped by username because do_gline() has no oper
     exemption -- an unscoped mask would kill the issuing oper too.
+    The username is wildcarded because the docker hub prefixes ~ to
+    every USER-supplied name (ident lookups enabled, no identd).
     """
     victim = IRCClient()
     await victim.connect(ircd_hub["host"], ircd_hub["port"])
     await victim.register("vict5a", "victim", "Test Victim")
 
-    await oper.send("GLINE !+victim@::/16 * 3600 :ambiguous mask test")
+    await oper.send("GLINE !+*victim@::/16 * 3600 :ambiguous mask test")
 
     try:
         assert await victim_is_killed(victim), (
-            "IPv4 client survived activation of G-line victim@::/16"
+            "IPv4 client survived activation of G-line *victim@::/16"
         )
     finally:
-        await deactivate_gline(ircd_hub, "victim@::/16")
+        await deactivate_gline(ircd_hub, "*victim@::/16")
         try:
             await victim.disconnect()
         except Exception:
@@ -173,13 +175,13 @@ async def test_star_host_mask_kills_ipv4_client(ircd_hub):
     await srv.handshake()
     now = int(time.time())
     try:
-        await srv._send(f"{srv._num} GL * +victim@* 3600 {now} {now + 3600} :star host test")
+        await srv._send(f"{srv._num} GL * +*victim@* 3600 {now} {now + 3600} :star host test")
         assert await victim_is_killed(victim), (
-            "IPv4 client survived activation of G-line victim@*"
+            "IPv4 client survived activation of G-line *victim@*"
         )
     finally:
         await srv.disconnect()
-        await deactivate_gline(ircd_hub, "victim@*", nick="cidrclnb")
+        await deactivate_gline(ircd_hub, "*victim@*", nick="cidrclnb")
         try:
             await victim.disconnect()
         except Exception:
@@ -188,8 +190,8 @@ async def test_star_host_mask_kills_ipv4_client(ircd_hub):
 
 async def test_ambiguous_mask_blocks_reconnect(ircd_hub, oper):
     """gline_lookup() must find the ambiguous G-line for IPv4 clients."""
-    await oper.send("GLINE !+victim@::/16 * 3600 :ambiguous mask test")
-    await wait_gline_state(oper, "victim@::/16", "+")
+    await oper.send("GLINE !+*victim@::/16 * 3600 :ambiguous mask test")
+    await wait_gline_state(oper, "*victim@::/16", "+")
 
     victim = IRCClient()
     await victim.connect(ircd_hub["host"], ircd_hub["port"])
@@ -211,10 +213,10 @@ async def test_ambiguous_mask_blocks_reconnect(ircd_hub, oper):
     except (ConnectionError, asyncio.IncompleteReadError):
         refused = True
     finally:
-        await deactivate_gline(ircd_hub, "victim@::/16", nick="cidrclnc")
+        await deactivate_gline(ircd_hub, "*victim@::/16", nick="cidrclnc")
         try:
             await victim.disconnect()
         except Exception:
             pass
 
-    assert refused, "IPv4 client registered despite covering victim@::/16 G-line"
+    assert refused, "IPv4 client registered despite covering *victim@::/16 G-line"
