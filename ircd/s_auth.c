@@ -526,7 +526,14 @@ static int check_auth_finished(struct AuthRequest *auth, int bitclr)
     }
     else if (DoIdentLookups)
     {
-      /* Prepend ~ to user->username. */
+      /*
+       * Untrusted username: prepend ~.
+       * Ident success / iauth U|o / WEBIRC trust are handled above.
+       * Cloudflare ports skip the ident query (peer is a CF edge) but
+       * still take this path when DoIdentLookups is enabled, so they
+       * get ~ like any other unverified user.  When DoIdentLookups is
+       * off, no port — including Cloudflare — forces a tilde.
+       */
       char *s = user->username;
       int ii;
       for (ii = USERLEN-1; ii > 0; ii--)
