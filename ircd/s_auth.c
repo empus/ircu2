@@ -464,9 +464,9 @@ static void iauth_notify(struct AuthRequest *auth, enum AuthRequestFlag flag)
     break;
 
   case AR_NEEDS_NICK:
-    /* Withhold a nick deferred for resume until it is committed, so iauth does
-       not evaluate a nick the client may not keep (see auth_defer_resume_nick()). */
-    if (IAuthHas(iauth, IAUTH_UNDERNET) && !auth->resume_wantnick[0])
+    /* Send the nick even while deferred for resume: iauth needs it to finish
+       the registration handshake and reply (login-on-connect stalls otherwise). */
+    if (IAuthHas(iauth, IAUTH_UNDERNET))
       sendto_iauth(auth->client, "n %s", cli_name(sptr));
     break;
 

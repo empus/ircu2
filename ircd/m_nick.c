@@ -256,9 +256,9 @@ int m_nick(struct Client* cptr, struct Client* sptr, int parc, char* parv[])
   }
   /*
    * Collision with a detached, resume-eligible session: defer the decision.
-   * Keep the nick without hashing or forwarding it to iauth, and let
-   * registration adopt that session once the account is known (see
-   * auth_defer_resume_nick() and check_auth_finished()).
+   * Keep the nick out of the hash (iauth still sees it, so registration can
+   * finish) and let registration adopt that session once the account is known
+   * (see auth_defer_resume_nick() and check_auth_finished()).
    */
   if (resume_account_deferrable(sptr, acptr))
     return auth_defer_resume_nick(sptr, nick);
