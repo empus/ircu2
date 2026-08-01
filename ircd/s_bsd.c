@@ -500,6 +500,7 @@ void close_connection(struct Client *cptr)
 void detach_connection(struct Client *cptr)
 {
   if (-1 < cli_fd(cptr)) {
+    auth_send_exit(cptr);  /* tell iauth this fd is gone before we close it */
     LocalClientArray[cli_fd(cptr)] = 0;
     if (IsTLS(cptr) && s_tls(&cli_socket(cptr))) {
       ircd_tls_close(s_tls(&cli_socket(cptr)), NULL);

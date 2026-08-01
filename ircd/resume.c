@@ -45,6 +45,7 @@
 #include "s_bsd.h"
 #include "s_misc.h"
 #include "s_user.h"
+#include "sasl.h"
 #include "send.h"
 
 #include <limits.h>
@@ -716,12 +717,27 @@ resume_adopt(struct Client *old_client, struct Client *new_client)
   *con_privs(newcon) = *con_privs(oldshell);
   con_snomask(newcon) = con_snomask(oldshell);
 
-  /* A resumed oper keeps no Operator block on the new connection; restore the
-     sendq/flood limits it had resolved on the old one (a class-derived byte
-     count, not transport state). */
-  if (IsAnOper(old_client)) {
-    con_max_sendq(newcon) = con_max_sendq(oldshell);
-    con_max_flood(newcon) = con_max_flood(oldshell);
+  /* Carry the session's resolved sendq/flood limits (the new connection has none). */
+  con_max_sendq(newcon) = con_max_sendq(oldshell);
+  con_max_flood(newcon) = con_max_flood(oldshell);
+
+  /* Carry the accumulated nick-change penalty, so a BRB/reconnect can't reset it. */
+  con_nextnick(newcon) = con_nextnick(oldshell);
+
+  /* Keep the local-count bucket and byte stats balanced across the swap. */
+  strcpy(con_sockhost(newcon), con_sockhost(oldshell));
+  con_sendM(newcon) = con_sendM(oldshell);
+  con_receiveM(newcon) = con_receiveM(oldshell);
+  con_sendB(newcon) = con_sendB(oldshell);
+  con_receiveB(newcon) = con_receiveB(oldshell);
+
+  /* Move the session's conf attachments (incl. any Operator block) onto the live
+     connection and hand the transient's own to the shell, so class link-counts
+     stay balanced -- the transient's is freed when new_client exits. */
+  {
+    struct SLink *tmp = con_confs(newcon);
+    con_confs(newcon) = con_confs(oldshell);
+    con_confs(oldshell) = tmp;
   }
 
   cli_connect(old_client) = newcon;
@@ -814,6 +830,11 @@ resume_complete(struct Client *new_client)
      connection is still its own. */
   if (cli_auth(new_client))
     destroy_auth_request(cli_auth(new_client));
+
+  /* Drop any in-flight SASL cookie/timer before the swap frees new_client. */
+  sasl_stop_timeout(new_client);
+  sasl_session_remove(cli_sasl(new_client));
+  cli_sasl(new_client) = 0;
 
   cli_resume_claim(new_client) = NULL;
   s->claimant = NULL;
